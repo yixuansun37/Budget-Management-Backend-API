@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getToken, isTokenExpired, logout } from './auth';
 
 const api = axios.create({
-  baseURL: 'https://budget-management-backend-api.onrender.com',
+  baseURL: process.env.REACT_APP_API_URL || 'https://budget-management-backend-api.onrender.com',
 });
 
 api.interceptors.request.use(config => {

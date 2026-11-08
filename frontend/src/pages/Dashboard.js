@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Paper, Grid, Card, CardContent, Box, Stack, Chip, Divider } from '@mui/material';
 import LoadingOverlay from '../components/LoadingOverlay';
+import BudgetAnalysis from '../components/BudgetAnalysis';
 import api from '../services/api';
 import { Link } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
@@ -333,6 +334,7 @@ function Dashboard() {
         </Stack>
       </Paper>
 
+      <BudgetAnalysis />
       <Grid container spacing={2} mb={4}>
         {stats.map((s, i) => (
           <Grid item xs={6} sm={4} md={3} key={i}>

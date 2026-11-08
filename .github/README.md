@@ -1,5 +1,62 @@
 # **Budget Management API** 💰
 
+## V2: Budget vs. Actual Analysis
+
+This extension builds on the original **Budget Management Backend API by Son Nguyen
+([hoangsonww](https://github.com/hoangsonww/Budget-Management-Backend-API))**.
+Original copyright and the [MIT license](../LICENSE) are preserved.
+
+The React Executive Dashboard includes a Budget vs. Actual section with totals,
+per-budget rows, monthly/category filters, loading indicators, empty states, and
+retryable errors. Existing dashboard features remain available.
+
+Authenticated API: `GET /api/budgets/analysis?month=2024-02&category=Travel`.
+Both query parameters are optional; encode category names in URLs. Invalid filters
+return HTTP 400. The response contains `summary`, `budgets`, `categories`, and the
+selected `month` / `category`. Each row contains `budgetId`, `category`, `budget`,
+`actual`, `remaining`, `variance`, and `expenseCount`.
+
+- **Budget:** the existing MongoDB budget's full `limit`.
+- **Actual:** MongoDB expenses linked to that budget; PostgreSQL transaction logs
+  are excluded to avoid counting separate records twice.
+- **Remaining:** budget minus actual; overspending remains negative.
+- **Variance:** actual minus budget; positive means overspending.
+- **Month:** `YYYY-MM`, selecting expense `createdAt` in UTC from the first day
+  inclusive to the next month exclusive. Omitting it includes all expense dates.
+  Limits are not prorated, and budgets are not filtered by their creation date.
+- **Category:** exact budget name, reusing the existing spending-category model
+  without new fields or migrations. Budgets with the same name are all included.
+  This is not a separate expense-category taxonomy.
+
+Budgets without matching expenses show zero actuals. Unknown categories return
+empty rows and zero totals. Expenses without an existing budget are excluded.
+Amounts are presented in USD, rounded to cents per budget before totals are added;
+the existing models do not provide currency conversion or monthly allocations.
+The API reads MongoDB directly to avoid the existing expense cache's stale data.
+It uses existing JWT protection; this feature does not introduce RBAC or ownership.
+
+For a local frontend, set `REACT_APP_API_URL=http://localhost:3000` before building
+or starting it (for example, `PORT=3001 REACT_APP_API_URL=http://localhost:3000 npm
+start` from `frontend/`). Without this variable, the original hosted API remains
+the default; that deployment must receive this backend change before the new
+dashboard section can work against it. No deployment is performed by this change.
+
+Validation commands, from the repository root unless specified:
+
+```sh
+PORT=0 npm test -- --runInBand
+PORT=0 npm run test:mocha
+# Optional real MongoDB integration tests: uses and drops only a per-process test database.
+MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm test -- --runInBand __tests__/budgetAnalysis.integration.test.js
+cd frontend
+npm test -- --runInBand
+npm run build
+```
+
+The analysis tests cover authentication, filters and UTC boundaries, overspending,
+zero/empty data, decimal totals, API failures, UI filtering/retry, and stale responses.
+The real MongoDB suite is skipped unless `MONGO_TEST_URI` is explicitly supplied.
+
 **_A Comprehensive, Microservices-Based API for Managing Budgets, Expenses, Users, and So Much More!_**
 
 **Welcome to the Budget Management API**, a robust, **microservices** backend platform for managing budgets, expenses, users, orders, and notifications. Built with **Node.js**, **Express**, and **TypeScript**, it supports advanced features like **GraphQL**, **gRPC**, **WebSockets**, and **REST APIs**. 

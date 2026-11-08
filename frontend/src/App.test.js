@@ -1,7 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import userEvent from '@testing-library/user-event';
 import App from './App';
 import * as auth from './services/auth';
 
@@ -18,7 +17,7 @@ describe('<App />', () => {
     expect(screen.getByRole('banner')).toBeInTheDocument(); // Navbar has role=banner
     expect(screen.getByRole('contentinfo')).toBeInTheDocument(); // Footer has role=contentinfo
     // Home page heading
-    expect(screen.getByText(/welcome to your budget app/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /operate budgets with clarity/i })).toBeInTheDocument();
   });
 
   it('navigates to not-found on an unknown route', () => {
@@ -37,18 +36,19 @@ describe('<App />', () => {
       </MemoryRouter>
     );
     // Should redirect to /login
-    expect(screen.getByRole('heading', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
   });
 
   it('allows /login and /register and /forgot-password', () => {
     ['/login', '/register', '/forgot-password'].forEach(path => {
+      cleanup();
       render(
         <MemoryRouter initialEntries={[path]}>
           <App />
         </MemoryRouter>
       );
       // There should be a submit button on each
-      expect(screen.getByRole('button', { name: /submit|login|register|reset/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^(login|register|verify email)$/i })).toBeInTheDocument();
     });
   });
 });
