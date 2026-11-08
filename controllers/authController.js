@@ -1,8 +1,6 @@
 const User = require('../models/user');
-const { generateToken } = require('../services/jwtService');
+const { generateToken, verifyToken: verifyJwtToken, tokenBlacklistKey } = require('../services/jwtService');
 const redisClient = require('../services/redisService');
-const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = process.env;
 
 /**
  * @swagger
@@ -66,7 +64,7 @@ const { JWT_SECRET } = process.env;
  */
 exports.register = async (req, res, next) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password } = req.body || {};
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -138,7 +136,7 @@ exports.register = async (req, res, next) => {
  */
 exports.login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     // Find user by email
     const user = await User.findOne({ email });
@@ -159,22 +157,10 @@ exports.login = async (req, res, next) => {
  * @swagger
  * /api/auth/logout:
  *   post:
- *     summary: Logout a user and invalidate all tokens for the user
+ *     summary: Logout the authenticated session and invalidate its token
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *             properties:
- *               email:
- *                 type: string
- *                 description: The email of the user logging out.
  *     responses:
  *       200:
  *         description: Logout successful.
@@ -185,7 +171,7 @@ exports.login = async (req, res, next) => {
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Logout successful. All tokens invalidated."
+ *                   example: "Logout successful. Current token invalidated."
  *       404:
  *         description: User not found.
  *         content:
@@ -201,26 +187,11 @@ exports.login = async (req, res, next) => {
  */
 exports.logout = async (req, res, next) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required to logout' });
-    }
-
-    // Find the user by email
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Invalidate all tokens by adding the user's ID to a Redis blacklist
-    const userId = user._id.toString();
-    const blacklistKey = `blacklist:${userId}`;
-    const tokenExpiry = 60 * 60 * 24 * 7;
-
+    // The authenticated identity is authoritative; ignore body-supplied email/IDs.
+    const blacklistKey = tokenBlacklistKey(req.authToken, req.user.userId);
+    const tokenExpiry = Math.max(1, req.user.exp - Math.floor(Date.now() / 1000));
     await redisClient.set(blacklistKey, 'true', { EX: tokenExpiry });
-
-    res.status(200).json({ message: 'Logout successful. All tokens invalidated.' });
+    res.status(200).json({ message: 'Logout successful. Current token invalidated.' });
   } catch (error) {
     next(error);
   }
@@ -268,7 +239,7 @@ exports.logout = async (req, res, next) => {
  */
 exports.verifyEmail = async (req, res, next) => {
   try {
-    const { email } = req.body;
+    const { email } = req.body || {};
 
     const user = await User.findOne({ email });
     if (user) {
@@ -285,63 +256,16 @@ exports.verifyEmail = async (req, res, next) => {
  * @swagger
  * /api/auth/reset-password:
  *   post:
- *     summary: Reset a user's password
+ *     summary: Password recovery is disabled until verified recovery is configured
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - newPassword
- *             properties:
- *               email:
- *                 type: string
- *                 description: The user's email address.
- *               newPassword:
- *                 type: string
- *                 format: password
- *                 description: The new password.
  *     responses:
- *       200:
- *         description: Password reset successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Password reset successfully
- *       404:
- *         description: User not found.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                   example: User not found
+ *       501:
+ *         description: Secure password recovery is not configured; no password is changed.
  */
-exports.resetPassword = async (req, res, next) => {
-  try {
-    const { email, newPassword } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    user.password = newPassword;
-    await user.save();
-
-    res.status(200).json({ message: 'Password reset successfully' });
-  } catch (error) {
-    next(error);
-  }
+exports.resetPassword = async (_req, res) => {
+  // The legacy endpoint accepted an email alone, enabling takeover of privileged accounts.
+  // A verified, single-use recovery token flow must exist before password reset is enabled.
+  res.status(501).json({ error: 'Secure password recovery is not configured. Password reset is disabled.' });
 };
 
 /**
@@ -385,29 +309,24 @@ exports.resetPassword = async (req, res, next) => {
  *                   example: Token is invalid or expired
  */
 exports.verifyToken = async (req, res, next) => {
+  const { token } = req.body || {};
+  if (typeof token !== 'string' || !token) {
+    return res.status(400).json({ error: 'Token is required' });
+  }
+  let decoded;
   try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
+    decoded = verifyJwtToken(token);
+    if (!decoded || typeof decoded.userId !== 'string' || !decoded.userId.trim() || !Number.isInteger(decoded.exp)) {
+      return res.status(401).json({ error: 'Token is invalid or expired' });
     }
-
-    // Decode and verify the token
-    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-      if (err) {
-        return res.status(401).json({ error: 'Token is invalid or expired' });
-      }
-
-      // Check if the token is blacklisted
-      const blacklistKey = `blacklist:${decoded.id}`;
-      const isBlacklisted = await redisClient.get(blacklistKey);
-
-      if (isBlacklisted) {
-        return res.status(401).json({ error: 'Token is invalid or expired' });
-      }
-
-      res.status(200).json({ valid: true });
-    });
+  } catch (_error) {
+    return res.status(401).json({ error: 'Token is invalid or expired' });
+  }
+  try {
+    if (await redisClient.get(tokenBlacklistKey(token, decoded.userId))) {
+      return res.status(401).json({ error: 'Token is invalid or expired' });
+    }
+    res.status(200).json({ valid: true });
   } catch (error) {
     next(error);
   }

@@ -1,4 +1,5 @@
 const Budget = require('../models/budget');
+const { approvedBudgets } = require('../services/budgetVisibility');
 const Expense = require('../models/expense');
 
 /**
@@ -43,7 +44,7 @@ exports.getBudgetAnalysis = async (req, res, next) => {
   }
 
   try {
-    const budgets = await Budget.find(category === undefined ? {} : { name: category })
+    const budgets = await Budget.find({ ...approvedBudgets, ...(category === undefined ? {} : { name: category }) })
       .sort({ name: 1, _id: 1 })
       .lean();
     const match = { budgetId: { $in: budgets.map(budget => budget._id) } };
@@ -83,7 +84,7 @@ exports.getBudgetAnalysis = async (req, res, next) => {
     );
     for (const key of ['budget', 'actual', 'remaining', 'variance']) summary[key] /= 100;
     // Return all categories so changing a filter never removes other options.
-    const categories = await Budget.distinct('name');
+    const categories = await Budget.distinct('name', approvedBudgets);
     res.json({ month: month || null, category: category || null, categories: categories.sort(), summary, budgets: rows });
   } catch (error) {
     next(error);

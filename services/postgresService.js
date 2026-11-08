@@ -6,7 +6,7 @@ const sslRequired = /sslmode=require/i.test(config.postgresUrl || '') || process
 // PostgreSQL connection configuration
 const pool = new Pool({
   connectionString: config.postgresUrl, // Load connection string from config
-  ssl: sslRequired ? { rejectUnauthorized: false } : undefined,
+  ssl: sslRequired ? { rejectUnauthorized: true } : undefined,
 });
 
 pool.on('connect', () => {

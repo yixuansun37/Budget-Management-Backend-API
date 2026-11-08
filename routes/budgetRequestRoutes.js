@@ -1,0 +1,15 @@
+const router = require('express').Router();
+const authenticate = require('../middleware/authMiddleware');
+const authorize = require('../middleware/authorize');
+const controller = require('../controllers/budgetRequestController');
+router.use(authenticate, authorize());
+router.get('/', controller.list);
+router.get('/reviewers', controller.reviewers);
+router.post('/', authorize('employee'), controller.create);
+router.get('/:id', controller.get);
+router.patch('/:id', authorize('employee'), controller.edit);
+router.post('/:id/submit', authorize('employee'), controller.transition('submit'));
+router.post('/:id/approve', authorize('manager', 'finance_admin'), controller.transition('approve'));
+router.post('/:id/reject', authorize('manager', 'finance_admin'), controller.transition('reject'));
+router.post('/:id/finalize', authorize('finance_admin'), controller.transition('finalize'));
+module.exports = router;

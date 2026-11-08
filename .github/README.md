@@ -1,5 +1,117 @@
 # **Budget Management API** 💰
 
+## V2: Multi-level approvals and RBAC
+
+The `/budget-requests` React screen provides **My Requests**, **Pending Approvals**,
+and **Approval History**, with draft creation/submission, review comments,
+approve/reject actions, and explicit final approval. Errors, loading, empty inboxes,
+and concurrent-review conflicts are handled in the UI.
+
+| Role | Server-enforced access |
+| --- | --- |
+| Employee (`employee`) | Create/edit/submit own drafts; view own requests and history |
+| Manager (`manager`) | View assigned submitted requests and their subsequent history; approve/reject at the manager stage |
+| Finance Admin (`finance_admin`) | View all approval records; approve/reject manager-approved requests and finalize finance-approved requests |
+
+New registrations always receive Employee access. Existing accounts without a
+role are treated as Employees. Neither registration, profile updates, nor JWT
+role claims can grant privileges. Authorization loads the current role from
+MongoDB; deleted accounts cannot use approval APIs. An operator with trusted
+database access provisions existing users using:
+
+```sh
+# Run from the repository root against the intended MONGO_DB_URI.
+node scripts/set-user-role.js <existing-user-id> manager
+node scripts/set-user-role.js <existing-user-id> finance_admin
+```
+
+This is an operator command, not a public role-assignment endpoint. Bootstrap
+reviewer accounts before using the workflow. No production company policy or
+privileged demo account is hardcoded.
+
+The normal lifecycle is:
+
+`DRAFT → SUBMITTED → MANAGER_APPROVED → FINANCE_APPROVED → FINAL_APPROVED`
+
+The assigned manager handles the first review; a Finance Admin handles finance
+review and a separate finalization action. Reviewers cannot approve, reject, or
+finalize their own requests. A reviewer may instead reject at their authorized
+stage with a mandatory nonblank reason. `REJECTED` and `FINAL_APPROVED` are terminal;
+submitted amounts and assignments cannot be edited. Rejected requests require a
+new draft. The same Finance Admin may perform finance and final review; requiring
+two distinct finance reviewers is not implemented.
+
+Set `BUDGET_FINANCE_APPROVAL_THRESHOLD` to a nonnegative monetary amount (at most
+two decimal places). Requests **at or above** that amount require finance review.
+The default is `0`, conservatively requiring finance for every request. Below an
+explicitly configured threshold, manager approval records `MANAGER_APPROVED`,
+then policy-automated `FINANCE_APPROVED` and `FINAL_APPROVED` history entries in
+one atomic update. These entries identify the system, not a human finance approver.
+The threshold and finance requirement are snapshotted at submission; later setting
+changes do not reroute submitted requests. Invalid configuration fails closed.
+
+Requests reuse the MongoDB Budget collection. Requester, assignment, policy,
+status and append-only decision history live in the same document, so transition,
+version increment and history append are atomic without a replica-set transaction.
+Each event stores status, actor, role, timestamp and comment. This is workflow
+history, not a general-purpose tamper-proof audit system.
+
+All endpoints below require an existing account's Bearer JWT:
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /api/budget-requests?view=mine\|pending\|history` | Scoped inbox/history; returns requests, current policy and role |
+| `GET /api/budget-requests/reviewers` | Selectable manager IDs and usernames |
+| `GET /api/budget-requests/:id` | Scoped request details/history |
+| `POST /api/budget-requests` | Employee creates `{name, limit, assignedManager, requestKey}` |
+| `PATCH /api/budget-requests/:id` | Employee edits own draft with name, limit, assignment and `expectedVersion` |
+| `POST /api/budget-requests/:id/submit` | Employee submits own draft |
+| `POST /api/budget-requests/:id/approve` | Assigned manager or finance reviewer acts at the matching stage |
+| `POST /api/budget-requests/:id/reject` | Authorized reviewer supplies required `comment` reason |
+| `POST /api/budget-requests/:id/finalize` | Finance Admin performs final approval |
+
+Every transition body includes `expectedVersion` from the response's `__v`, plus
+an optional `comment` (required for rejection). Stale/duplicate transitions return
+409 and do not append history. For creation, generate a stable UUID `requestKey`
+and reuse it on retries: the same requester/key/payload returns the existing
+request, while a changed payload under that key returns 409. A partial unique
+MongoDB index enforces concurrent creation deduplication; setup waits for it.
+
+Drafts and in-progress/rejected requests are excluded from shared budget lists,
+GraphQL/gRPC budget reads, and Budget vs. Actual analysis. Only final-approved
+requests become spendable budgets, using the **same ID and document**. Shared
+REST budget reads omit private approval metadata. Generic REST and gRPC budget
+creation/edit/deletion requires Finance Admin; workflow-managed budgets cannot be
+edited/deleted through those APIs, even after approval. Legacy budgets remain
+available without backfilling approval history. gRPC now requires an Authorization
+metadata value containing the same Bearer JWT. Alternate Java/.NET examples are
+separate applications and are not part of this Node.js authorization implementation.
+
+Security prerequisites addressed here: profile writes allow only username/email,
+logout revokes only the authenticated JWT through Redis, and newly issued sessions
+have distinct token IDs. The old unverified public password-reset endpoint is
+disabled (501) because it allowed account takeover; secure email recovery is not
+configured. Production startup rejects a missing/default `JWT_SECRET`. Use a strong
+secret and TLS at the public ingress; local test defaults are development-only.
+TLS certificate checks remain enabled, including PostgreSQL when SSL is requested;
+configure a trusted CA for private certificates rather than bypassing verification.
+
+Validation (from the repository root):
+
+```sh
+# Existing suites plus policy/auth tests; MongoDB suites opt in below.
+PORT=0 npm test -- --runInBand
+# Uses disposable per-process test databases, never the configured application database.
+PORT=0 MONGO_TEST_URI=mongodb://127.0.0.1:27017 npm test -- --runInBand
+PORT=0 npm run test:mocha
+cd frontend
+npm test -- --runInBand
+npm run build
+```
+
+The V2 work extends the original project by **Son Nguyen / hoangsonww**; the
+original attribution and [MIT license](../LICENSE) remain intact.
+
 ## V2: Budget vs. Actual Analysis
 
 This extension builds on the original **Budget Management Backend API by Son Nguyen

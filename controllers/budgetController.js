@@ -1,4 +1,5 @@
 const Budget = require('../models/budget');
+const { approvedBudgets, publicBudgetFields } = require('../services/budgetVisibility');
 const redisClient = require('../services/redisService');
 const mongoose = require('mongoose');
 const { publishEvent } = require('../apache-kafka/kafkaService');
@@ -137,18 +138,9 @@ exports.getBudget = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    // Check cache first
-    const cachedBudget = await redisClient.get(`budget:${id}`);
-    if (cachedBudget) {
-      return res.status(200).json({ budget: JSON.parse(cachedBudget), source: 'cache' });
-    }
-
-    // Fetch from MongoDB if not in cache
-    const budget = await Budget.findById(id);
+    // Scope before responding; cached documents may contain private approval fields.
+    const budget = await Budget.findOne({ _id: id, ...approvedBudgets }).select(publicBudgetFields);
     if (!budget) return res.status(404).json({ error: 'Budget not found' });
-
-    // Cache the budget in Redis
-    await redisClient.set(`budget:${id}`, JSON.stringify(budget));
 
     res.status(200).json({ budget, source: 'database' });
   } catch (error) {
@@ -186,7 +178,7 @@ exports.getBudget = async (req, res, next) => {
  */
 exports.getAllBudgets = async (req, res, next) => {
   try {
-    const budgets = await Budget.find();
+    const budgets = await Budget.find(approvedBudgets).select(publicBudgetFields);
     res.status(200).json(budgets);
   } catch (error) {
     next(error);
@@ -235,7 +227,7 @@ exports.deleteBudget = async (req, res, next) => {
 
   try {
     // Attempt to delete the budget
-    const deletedBudget = await Budget.findByIdAndDelete(id);
+    const deletedBudget = await Budget.findOneAndDelete({ _id: id, requester: { $exists: false } });
     if (!deletedBudget) {
       return res.status(404).json({ error: 'Budget not found' });
     }
@@ -337,7 +329,7 @@ exports.updateBudget = async (req, res, next) => {
     }
 
     // Update the budget
-    const updatedBudget = await Budget.findByIdAndUpdate(id, { name, limit }, { new: true, runValidators: true });
+    const updatedBudget = await Budget.findOneAndUpdate({ _id: id, requester: { $exists: false } }, { name, limit }, { new: true, runValidators: true });
 
     if (!updatedBudget) {
       return res.status(404).json({ error: 'Budget not found' });

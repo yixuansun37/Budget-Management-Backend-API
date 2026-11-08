@@ -57,7 +57,7 @@ test('returns reconciled metrics, negative remaining, zero budgets and decimal t
 test('applies category and inclusive/exclusive UTC month boundaries to database queries', async () => {
   const response = await get({ month: '2024-02', category: 'Travel' });
   expect(response.status).toBe(200);
-  expect(Budget.find).toHaveBeenCalledWith({ name: 'Travel' });
+  expect(Budget.find).toHaveBeenCalledWith({ ...require('../services/budgetVisibility').approvedBudgets, name: 'Travel' });
   expect(Expense.aggregate.mock.calls[0][0][0].$match).toEqual({
     budgetId: { $in: ['travel', 'food', 'office'] },
     createdAt: { $gte: new Date('2024-02-01T00:00:00Z'), $lt: new Date('2024-03-01T00:00:00Z') },

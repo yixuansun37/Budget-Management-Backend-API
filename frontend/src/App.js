@@ -11,6 +11,7 @@ import Expenses from './pages/Expenses';
 import Users from './pages/Users';
 import Dashboard from './pages/Dashboard';
 import Passkeys from './pages/Passkeys';
+import BudgetRequests from './pages/BudgetRequests';
 import ProtectedRoute from './components/ProtectedRoute';
 import GuestRoute from './components/GuestRoute';
 import ForgotPassword from './pages/ForgotPassword';
@@ -44,6 +45,14 @@ function App() {
         {/* Main content area grows as needed */}
         <Box component="main" sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Routes>
+            <Route
+              path="/budget-requests"
+              element={
+                <ProtectedRoute>
+                  <BudgetRequests />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/" element={<Home />} />
             <Route
               path="/login"

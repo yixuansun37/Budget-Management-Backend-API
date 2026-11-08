@@ -12,6 +12,7 @@ const searchRoutes = require('./searchRoutes');
 const transactionRoutes = require('./transactionRoutes');
 const healthRoutes = require('./healthRoutes');
 const passkeyRoutes = require('./passkeyRoutes');
+const budgetRequestRoutes = require('./budgetRequestRoutes');
 
 const router = express.Router();
 
@@ -22,6 +23,7 @@ router.use('/auth', authRoutes);
 router.use('/passkeys', passkeyRoutes);
 router.use('/users', userRoutes);
 router.use('/budgets', budgetRoutes);
+router.use('/budget-requests', budgetRequestRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/graphql', graphqlRoutes);
 router.use('/search', searchRoutes);

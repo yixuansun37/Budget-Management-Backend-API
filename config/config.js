@@ -1,5 +1,9 @@
 require('dotenv').config();
 
+if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'dev-secret-change-me')) {
+  throw new Error('A non-default JWT_SECRET is required in production');
+}
+
 // Load environment variables from .env file
 module.exports = {
   mongoURI: process.env.MONGO_DB_URI || 'mongodb://localhost:27017/budget_manager',

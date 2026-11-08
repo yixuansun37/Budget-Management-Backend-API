@@ -38,6 +38,29 @@ const budgetSchema = new mongoose.Schema({
   name: { type: String, required: true },
   limit: { type: Number, required: true },
   createdAt: { type: Date, default: Date.now },
+  // Optional on legacy budgets. Request-backed budgets use the same persisted record.
+  requester: { type: mongoose.Schema.Types.ObjectId, ref: 'User', immutable: true },
+  assignedManager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approvalStatus: { type: String, enum: ['DRAFT', 'SUBMITTED', 'MANAGER_APPROVED', 'FINANCE_APPROVED', 'FINAL_APPROVED', 'REJECTED'] },
+  approvalThreshold: Number,
+  financeRequired: Boolean,
+  requestKey: { type: String, immutable: true, select: false },
+  requestFingerprint: { type: String, immutable: true, select: false },
+  history: {
+    type: [
+      {
+        _id: false,
+        status: { type: String, required: true },
+        actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        role: { type: String, required: true },
+        at: { type: Date, required: true },
+        comment: { type: String, default: '' },
+      },
+    ],
+    default: undefined,
+  },
 });
+
+budgetSchema.index({ requester: 1, requestKey: 1 }, { unique: true, partialFilterExpression: { requestKey: { $type: 'string' } } });
 
 module.exports = mongoose.model('Budget', budgetSchema);

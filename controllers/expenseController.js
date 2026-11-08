@@ -1,5 +1,6 @@
 const Expense = require('../models/expense');
 const Budget = require('../models/budget');
+const { approvedBudgets } = require('../services/budgetVisibility');
 const redisClient = require('../services/redisService');
 const mongoose = require('mongoose');
 const esClient = require('../services/elasticService');
@@ -87,7 +88,7 @@ exports.addExpense = async (req, res, next) => {
     }
 
     // Ensure the budget exists
-    const budget = await Budget.findById(budgetId);
+    const budget = await Budget.findOne({ _id: budgetId, ...approvedBudgets });
     if (!budget) {
       return res.status(404).json({ error: 'Budget not found' });
     }

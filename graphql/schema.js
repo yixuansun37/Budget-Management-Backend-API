@@ -1,5 +1,6 @@
 const { GraphQLObjectType, GraphQLSchema, GraphQLString, GraphQLList, GraphQLID, GraphQLInt } = require('graphql');
 const Budget = require('../models/budget');
+const { approvedBudgets, publicBudgetFields } = require('../services/budgetVisibility');
 const Expense = require('../models/expense');
 
 const BudgetType = new GraphQLObjectType({
@@ -28,12 +29,16 @@ const RootQuery = new GraphQLObjectType({
   fields: {
     budgets: {
       type: new GraphQLList(BudgetType),
-      resolve: () => Budget.find(),
+      resolve: () => Budget.find(approvedBudgets).select(publicBudgetFields),
     },
     expenses: {
       type: new GraphQLList(ExpenseType),
       args: { budgetId: { type: GraphQLID } },
-      resolve: (_, { budgetId }) => Expense.find({ budgetId }),
+      resolve: async (_, { budgetId }) => {
+        if (!budgetId) return [];
+        const budget = await Budget.findOne({ _id: budgetId, ...approvedBudgets }).select('_id');
+        return budget ? Expense.find({ budgetId: budget._id }) : [];
+      },
     },
   },
 });

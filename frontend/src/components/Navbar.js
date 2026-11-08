@@ -88,6 +88,7 @@ function Navbar({ mode, setMode }) {
     { to: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { to: '/budgets', label: 'Budgets', icon: <AttachMoneyIcon /> },
     { to: '/expenses', label: 'Expenses', icon: <ReceiptLongIcon /> },
+    { to: '/budget-requests', label: 'Approvals', icon: <AttachMoneyIcon /> },
     { to: '/profile', label: 'Profile', icon: <AccountCircleIcon /> },
     { to: '/users', label: 'Users', icon: <GroupIcon /> },
   ];

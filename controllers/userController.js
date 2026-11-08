@@ -1,6 +1,15 @@
 const User = require('../models/user');
 const { verifyToken } = require('../services/jwtService');
 
+const permittedProfileFields = new Set(['username', 'email']);
+const validProfileUpdates = body =>
+  body &&
+  typeof body === 'object' &&
+  !Array.isArray(body) &&
+  Object.keys(body).length > 0 &&
+  Object.keys(body).every(key => permittedProfileFields.has(key)) &&
+  Object.values(body).every(value => typeof value === 'string' && value.trim());
+
 /**
  * @swagger
  * tags:
@@ -184,6 +193,9 @@ exports.updateProfile = async (req, res, next) => {
 
     const decoded = verifyToken(token);
 
+    if (!validProfileUpdates(req.body)) {
+      return res.status(400).json({ error: 'Only nonempty username and email fields can be updated' });
+    }
     const { username, email } = req.body;
 
     // Check if fields are provided
@@ -346,6 +358,9 @@ exports.patchProfile = async (req, res, next) => {
 
     const decoded = verifyToken(token);
 
+    if (!validProfileUpdates(req.body)) {
+      return res.status(400).json({ error: 'Only nonempty username and email fields can be updated' });
+    }
     const updates = req.body;
 
     // Ensure updates object is not empty
