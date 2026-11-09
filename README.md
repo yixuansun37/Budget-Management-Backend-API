@@ -4,6 +4,16 @@ A Node.js/Express and React budget management application extended with financia
 analysis, role-based approvals, and persistent audit history. V2 focuses on business
 rules, authorization, concurrent updates, and testable data consistency.
 
+**Portfolio focus:** backend/API design, MongoDB data modeling, authorization,
+and reliable business workflows. **Verification:** 179 automated tests passing,
+plus a production frontend build and local browser integration checks.
+
+[Repository](https://github.com/yixuansun37/Budget-Management-Backend-API) ·
+[My V2 contributions](#my-v2-contributions) · [Screenshots](#screenshots) ·
+[Local setup](#local-setup) · [Demo walkthrough](#demo-walkthrough) ·
+[API reference](#v2-api-reference) · [Verification](#tests-and-verification) ·
+[Known limitations](#known-limitations-and-security-review)
+
 ## Attribution and license
 
 This repository builds on **Son Nguyen's
@@ -13,7 +23,9 @@ CRUD, authentication/passkeys, React screens, database adapters, messaging examp
 and deployment templates originate from that project. They are not claimed as
 independently developed V2 work.
 
-The independently developed V2 extensions in this fork are:
+## My V2 contributions
+
+The independently developed extensions in this fork are:
 
 - **Budget vs. Actual:** authenticated reporting API and dashboard, monthly/category
   filters, remaining balance and signed variance, with tested empty/error states.
@@ -25,6 +37,26 @@ The independently developed V2 extensions in this fork are:
   snapshots; scoped, filtered, paginated Audit History UI.
 - Supporting authentication fixes, workflow bypass protection across the Node
   REST/gRPC interfaces, and automated security/consistency tests.
+
+The upstream project supplies the original application and integrations; the
+V2 work extends that foundation rather than claiming the entire system as new.
+
+## Screenshots
+
+Captured during local verification with disposable test/sample data. These are
+application screenshots, not evidence of a hosted production deployment.
+
+### Budget vs. Actual
+
+![Budget vs. Actual dashboard with budget, actual expense, remaining balance and variance metrics](docs/screenshots/budget-analysis.png)
+
+### Multi-level approval history
+
+![Completed request showing manager review, finance review and final approval history](docs/screenshots/approval-workflow.png)
+
+### Audit History
+
+![Audit History with budget ID, action and UTC date filters and before/after snapshots](docs/screenshots/audit-history.png)
 
 ## Architecture
 
@@ -45,6 +77,15 @@ transaction records are separate from expenses and audit evidence. Kafka and
 RabbitMQ have application integration points, but the audit feature does not
 depend on their delivery or console logs. Java/Spring and .NET directories are
 separate inherited implementations; V2 changes target the Node/React application.
+
+| Layer | Technologies used |
+| --- | --- |
+| Backend | JavaScript, Node.js, Express, JWT, Mongoose; inherited GraphQL/gRPC interfaces |
+| V2 persistence | MongoDB budgets, expenses, users, workflow state and embedded audit events |
+| Authentication support | Redis token revocation; upstream bcrypt and passkey authentication |
+| Frontend | React 18, Material UI, Axios, Chart.js |
+| Verification | Jest, Supertest, Mocha/Chai, React Testing Library, Chromium browser checks |
+| Inherited integrations | PostgreSQL transaction records, Elasticsearch expense search, Kafka events, RabbitMQ tasks |
 
 ### Audit consistency and retention
 
@@ -135,10 +176,29 @@ may perform both. Below an explicitly configured threshold, manager approval
 automatically records the remaining stages with system actors. Policy is
 snapshotted at submission. Rejection requires a reason and is terminal.
 
+## Demo walkthrough
+
+Use local services and disposable accounts; no public demo account or deployment
+is assumed.
+
+1. Register three accounts and retrieve each ID from `GET /api/users/profile`.
+   Keep one Employee and use the operator commands above to assign Manager and
+   Finance Admin roles to the other two.
+2. As the Employee, open **Approvals → My Requests**, save a draft with an assigned
+   Manager, and submit it. The default threshold requires finance review.
+3. As the assigned Manager, open **Pending Approvals** and approve with a review
+   comment, or reject with a mandatory reason.
+4. As Finance Admin, approve a manager-approved request and then perform
+   **Final Approve**. The same budget becomes visible in the shared budget list.
+5. Open **Dashboard** to review Budget vs. Actual metrics for recorded expenses.
+   Open **Audit History** and filter by the request ID to inspect actors, actions,
+   timestamps and before/after values. Compare access from different roles.
+
 ## V2 API reference
 
-Send `Authorization: Bearer <JWT>` for every endpoint below. Authorization uses
-the account's current MongoDB role, not caller-supplied role claims.
+Send `Authorization: Bearer <JWT>` for every endpoint below. Approval and audit
+permissions use the account's current MongoDB role, not caller-supplied role
+claims. The analysis endpoint uses the existing JWT authentication middleware.
 
 | Endpoint | Behavior |
 | --- | --- |
@@ -208,6 +268,7 @@ Verified on 2026-11-09 in the current local cloud instance:
 | Backend Jest, including real MongoDB suites | **147 passed**, 0 failed, 0 skipped |
 | Backend Mocha regression suite | **7 passed**, 0 failed |
 | Frontend Jest / React Testing Library | **25 passed**, 0 failed |
+| Total automated tests | **179 passed**, 0 failed |
 | React production build (`CI=true`) | Passed |
 | Chromium with built React + live Express/MongoDB/Redis | Passed: scoped reads, lifecycle evidence, before/after, soft-delete retention, ID/action/UTC-date filters, pagination, empty/clear states |
 | MIT/license and new-file secret review | License unchanged; no new exposed credentials identified |

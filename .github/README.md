@@ -3,6 +3,20 @@
 The primary application is Node.js/Express + React, extended with Budget vs. Actual
 Analysis, multi-level approvals/RBAC, and persistent Audit Trail.
 
+## Independently developed V2 extensions
+
+- MongoDB-backed analysis API and React dashboard with monthly/category filters.
+- Three-role approvals with configurable thresholds, idempotent submissions,
+  self-approval prevention and version-checked transitions.
+- Atomic business/audit writes, role-scoped history, filtering and pagination.
+
+**Verified locally:** 179 automated tests passed, the production frontend build
+passed, and Chromium checks exercised the built UI against actual services.
+No production deployment is claimed. The original application and integrations
+remain attributed to Son Nguyen; the V2 extensions are identified separately.
+
+![V2 Audit History with filters and before/after snapshots](../docs/screenshots/audit-history.png)
+
 Read the **[portfolio README](../README.md)** for the architecture, independently
 developed V2 features, setup, APIs, tests, verification evidence, attribution,
 and known security limitations. Based on the original project by
