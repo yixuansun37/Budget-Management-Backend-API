@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 require('dotenv').config();
 
-// Allow connecting to managed DBs with self-signed chains when sslmode=require is used.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Configure trusted certificate authorities for private databases; retain TLS verification.
 
 const { Pool } = require('pg');
 const { faker } = require('@faker-js/faker');
@@ -36,7 +35,7 @@ if (!validDbName.test(targetDb) || !validDbName.test(adminDb)) {
 const sslMode = (baseUrl.searchParams.get('sslmode') || '').toLowerCase();
 const sslRequired = ['require', 'verify-ca', 'verify-full'].includes(sslMode) || process.env.PGSSLMODE === 'require' || process.env.POSTGRES_SSL === 'true';
 
-const ssl = sslRequired ? { rejectUnauthorized: false } : undefined;
+const ssl = sslRequired ? { rejectUnauthorized: true } : undefined;
 
 const buildUrl = dbName => {
   const url = new URL(rawUrl);

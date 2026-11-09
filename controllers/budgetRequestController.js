@@ -2,7 +2,7 @@ const service = require('../services/budgetApprovalService');
 const User = require('../models/user');
 const { getApprovalPolicy } = require('../config/approvalPolicy');
 const clean = request => {
-  const { requestKey, requestFingerprint, ...safe } = request;
+  const { requestKey, requestFingerprint, auditTrail, ...safe } = request;
   return safe;
 };
 const handle = fn => async (req, res, next) => {

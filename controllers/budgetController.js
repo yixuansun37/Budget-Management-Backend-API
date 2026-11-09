@@ -3,6 +3,33 @@ const { approvedBudgets, publicBudgetFields } = require('../services/budgetVisib
 const redisClient = require('../services/redisService');
 const mongoose = require('mongoose');
 const { publishEvent } = require('../apache-kafka/kafkaService');
+const { event: auditEvent } = require('../services/auditService');
+
+const publicBudget = document => {
+  const value = document.toObject ? document.toObject() : { ...document };
+  for (const key of [
+    'auditTrail',
+    'deletedAt',
+    'requester',
+    'assignedManager',
+    'history',
+    'approvalThreshold',
+    'financeRequired',
+    'requestKey',
+    'requestFingerprint',
+  ])
+    delete value[key];
+  return value;
+};
+// The database action and audit entry have already committed together. Optional
+// cache/event failures must not make callers retry a successful business write.
+const secondary = async operation => {
+  try {
+    await operation();
+  } catch (_) {
+    console.warn('Budget cache/event delivery unavailable after database commit');
+  }
+};
 
 /**
  * @swagger
@@ -63,23 +90,27 @@ exports.createBudget = async (req, res, next) => {
   try {
     const { name, limit } = req.body;
     const budget = new Budget({ name, limit });
+    budget.auditTrail = [auditEvent('BUDGET_CREATED', req.principal, null, budget, budget._id)];
     const savedBudget = await budget.save();
+    const safeBudget = publicBudget(savedBudget);
 
     // Cache the budget in Redis
-    await redisClient.set(`budget:${savedBudget._id}`, JSON.stringify(savedBudget));
+    await secondary(() => redisClient.set(`budget:${savedBudget._id}`, JSON.stringify(safeBudget)));
 
-    await publishEvent(
-      'budget-events',
-      'budget.created',
-      {
-        budgetId: savedBudget._id.toString(),
-        name: savedBudget.name,
-        limit: savedBudget.limit,
-      },
-      { key: savedBudget._id.toString(), source: 'budget-controller' }
+    await secondary(() =>
+      publishEvent(
+        'budget-events',
+        'budget.created',
+        {
+          budgetId: savedBudget._id.toString(),
+          name: savedBudget.name,
+          limit: savedBudget.limit,
+        },
+        { key: savedBudget._id.toString(), source: 'budget-controller' }
+      )
     );
 
-    res.status(201).json({ message: 'Budget created', budget: savedBudget });
+    res.status(201).json({ message: 'Budget created', budget: safeBudget });
   } catch (error) {
     next(error);
   }
@@ -226,20 +257,33 @@ exports.deleteBudget = async (req, res, next) => {
   const { id } = req.params;
 
   try {
-    // Attempt to delete the budget
-    const deletedBudget = await Budget.findOneAndDelete({ _id: id, requester: { $exists: false } });
-    if (!deletedBudget) {
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: 'Invalid budget ID format' });
+    const before = await Budget.findOne({ _id: id, requester: { $exists: false }, deletedAt: { $exists: false } });
+    if (!before) {
       return res.status(404).json({ error: 'Budget not found' });
     }
+    const deletedAt = new Date();
+    const deletedBudget = await Budget.findOneAndUpdate(
+      { _id: id, requester: { $exists: false }, deletedAt: { $exists: false }, __v: before.__v },
+      {
+        $set: { deletedAt },
+        $inc: { __v: 1 },
+        $push: { auditTrail: auditEvent('BUDGET_DELETED', req.principal, before, { ...before.toObject(), deletedAt }, before._id) },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!deletedBudget) return res.status(409).json({ error: 'Budget changed. Refresh before acting again.' });
 
     // Remove from Redis cache
-    await redisClient.del(`budget:${id}`);
+    await secondary(() => redisClient.del(`budget:${id}`));
 
-    await publishEvent(
-      'budget-events',
-      'budget.deleted',
-      { budgetId: id, name: deletedBudget.name, limit: deletedBudget.limit },
-      { key: id, source: 'budget-controller' }
+    await secondary(() =>
+      publishEvent(
+        'budget-events',
+        'budget.deleted',
+        { budgetId: id, name: deletedBudget.name, limit: deletedBudget.limit },
+        { key: id, source: 'budget-controller' }
+      )
     );
 
     res.status(200).json({ message: 'Budget deleted successfully' });
@@ -328,28 +372,42 @@ exports.updateBudget = async (req, res, next) => {
       return res.status(400).json({ error: 'Invalid budget ID format' });
     }
 
-    // Update the budget
-    const updatedBudget = await Budget.findOneAndUpdate({ _id: id, requester: { $exists: false } }, { name, limit }, { new: true, runValidators: true });
-
-    if (!updatedBudget) {
+    const before = await Budget.findOne({ _id: id, requester: { $exists: false }, deletedAt: { $exists: false } });
+    if (!before) {
       return res.status(404).json({ error: 'Budget not found' });
     }
+    const values = { ...(name !== undefined && { name }), ...(limit !== undefined && { limit }) };
+    const after = new Budget({ ...before.toObject(), ...values });
+    await after.validate();
+    const updatedBudget = await Budget.findOneAndUpdate(
+      { _id: id, requester: { $exists: false }, deletedAt: { $exists: false }, __v: before.__v },
+      {
+        $set: { name: after.name, limit: after.limit },
+        $inc: { __v: 1 },
+        $push: { auditTrail: auditEvent('BUDGET_MODIFIED', req.principal, before, after, before._id) },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updatedBudget) return res.status(409).json({ error: 'Budget changed. Refresh before acting again.' });
+    const safeBudget = publicBudget(updatedBudget);
 
     // Update Redis cache
-    await redisClient.set(`budget:${id}`, JSON.stringify(updatedBudget));
+    await secondary(() => redisClient.set(`budget:${id}`, JSON.stringify(safeBudget)));
 
-    await publishEvent(
-      'budget-events',
-      'budget.updated',
-      {
-        budgetId: updatedBudget._id.toString(),
-        name: updatedBudget.name,
-        limit: updatedBudget.limit,
-      },
-      { key: updatedBudget._id.toString(), source: 'budget-controller' }
+    await secondary(() =>
+      publishEvent(
+        'budget-events',
+        'budget.updated',
+        {
+          budgetId: updatedBudget._id.toString(),
+          name: updatedBudget.name,
+          limit: updatedBudget.limit,
+        },
+        { key: updatedBudget._id.toString(), source: 'budget-controller' }
+      )
     );
 
-    res.status(200).json({ message: 'Budget updated successfully', budget: updatedBudget });
+    res.status(200).json({ message: 'Budget updated successfully', budget: safeBudget });
   } catch (error) {
     // Handle validation errors
     if (error.name === 'ValidationError') {

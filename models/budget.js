@@ -1,4 +1,19 @@
 const mongoose = require('mongoose');
+const auditActions = require('../config/auditActions');
+
+const snapshotSchema = new mongoose.Schema({
+  name: String, limit: Number, assignedManager: mongoose.Schema.Types.ObjectId,
+  approvalStatus: String, approvalThreshold: Number, financeRequired: Boolean, deletedAt: Date,
+}, { _id: false });
+const auditSchema = new mongoose.Schema({
+  actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  actorRole: { type: String, enum: ['employee', 'manager', 'finance_admin', 'system'], required: true },
+  action: { type: String, enum: auditActions, required: true },
+  targetId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  timestamp: { type: Date, required: true },
+  before: { type: snapshotSchema, default: null },
+  after: { type: snapshotSchema, default: null },
+});
 
 /**
  * @swagger
@@ -38,6 +53,9 @@ const budgetSchema = new mongoose.Schema({
   name: { type: String, required: true },
   limit: { type: Number, required: true },
   createdAt: { type: Date, default: Date.now },
+  deletedAt: Date,
+  // Business mutations and their audit evidence commit in the same MongoDB document.
+  auditTrail: { type: [auditSchema], default: undefined, select: false },
   // Optional on legacy budgets. Request-backed budgets use the same persisted record.
   requester: { type: mongoose.Schema.Types.ObjectId, ref: 'User', immutable: true },
   assignedManager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -62,5 +80,6 @@ const budgetSchema = new mongoose.Schema({
 });
 
 budgetSchema.index({ requester: 1, requestKey: 1 }, { unique: true, partialFilterExpression: { requestKey: { $type: 'string' } } });
+budgetSchema.index({ 'auditTrail.timestamp': -1 });
 
 module.exports = mongoose.model('Budget', budgetSchema);

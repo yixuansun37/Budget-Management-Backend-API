@@ -6,6 +6,7 @@ const Expense = require('./models/expense');
 const authenticate = require('./middleware/authMiddleware');
 const authorize = require('./middleware/authorize');
 const { approvedBudgets } = require('./services/budgetVisibility');
+const { event: auditEvent } = require('./services/auditService');
 
 // Load gRPC Proto
 const PROTO_PATH = path.join(__dirname, 'proto/budget.proto');
@@ -88,6 +89,7 @@ const budgetManager = {
     try {
       const { name, limit } = call.request;
       const budget = new Budget({ name, limit });
+      budget.auditTrail = [auditEvent('BUDGET_CREATED', call.principal, null, budget, budget._id)];
       const savedBudget = await budget.save();
       callback(null, { budgetId: savedBudget._id.toString() });
     } catch (error) {
@@ -103,10 +105,22 @@ const budgetManager = {
       if (name) update.name = name;
       if (limit > 0) update.limit = limit;
 
-      const updatedBudget = await Budget.findOneAndUpdate({ _id: budgetId, requester: { $exists: false } }, update, { new: true, runValidators: true });
-      if (!updatedBudget) {
+      const before = await Budget.findOne({ _id: budgetId, requester: { $exists: false }, deletedAt: { $exists: false } });
+      if (!before) {
         return callback(new Error('Budget not found'), null);
       }
+      const after = new Budget({ ...before.toObject(), ...update });
+      await after.validate();
+      const updatedBudget = await Budget.findOneAndUpdate(
+        { _id: budgetId, requester: { $exists: false }, deletedAt: { $exists: false }, __v: before.__v },
+        {
+          $set: { name: after.name, limit: after.limit },
+          $inc: { __v: 1 },
+          $push: { auditTrail: auditEvent('BUDGET_MODIFIED', call.principal, before, after, before._id) },
+        },
+        { new: true, runValidators: true }
+      );
+      if (!updatedBudget) return callback(Object.assign(new Error('Budget changed. Refresh before acting again.'), { code: grpc.status.ABORTED }), null);
       callback(null, { budget: mapBudget(updatedBudget) });
     } catch (error) {
       callback(error, null);
@@ -117,11 +131,22 @@ const budgetManager = {
   DeleteBudget: async (call, callback) => {
     try {
       const { budgetId } = call.request;
-      const deletedBudget = await Budget.findOneAndDelete({ _id: budgetId, requester: { $exists: false } });
-      if (!deletedBudget) {
+      const before = await Budget.findOne({ _id: budgetId, requester: { $exists: false }, deletedAt: { $exists: false } });
+      if (!before) {
         return callback(new Error('Budget not found'), null);
       }
-      await Expense.deleteMany({ budgetId });
+      const deletedAt = new Date();
+      const deletedBudget = await Budget.findOneAndUpdate(
+        { _id: budgetId, requester: { $exists: false }, deletedAt: { $exists: false }, __v: before.__v },
+        {
+          $set: { deletedAt },
+          $inc: { __v: 1 },
+          $push: { auditTrail: auditEvent('BUDGET_DELETED', call.principal, before, { ...before.toObject(), deletedAt }, before._id) },
+        },
+        { new: true, runValidators: true }
+      );
+      if (!deletedBudget) return callback(Object.assign(new Error('Budget changed. Refresh before acting again.'), { code: grpc.status.ABORTED }), null);
+      // Preserve the budget, its audit entries, and financial references.
       callback(null, { deleted: true });
     } catch (error) {
       callback(error, null);
@@ -241,6 +266,7 @@ const protectedBudgetManager = Object.fromEntries(
         await runMiddleware(authenticate, req);
         const roles = ['CreateBudget', 'UpdateBudget', 'DeleteBudget'].includes(name) ? ['finance_admin'] : [];
         await runMiddleware(authorize(...roles), req);
+        call.principal = req.principal;
         await handler(call, callback);
       } catch (error) {
         const denied = Object.assign(new Error(error.statusCode ? error.message : 'Unable to process request'), {

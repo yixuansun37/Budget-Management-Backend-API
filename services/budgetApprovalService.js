@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Budget = require('../models/budget');
 const User = require('../models/user');
 const { getApprovalPolicy } = require('../config/approvalPolicy');
+const audit = require('./auditService');
 
 const fail = (status, message) => {
   const error = new Error(message);
@@ -49,9 +50,18 @@ const get = async (requestId, principal) => {
 const update = async (request, body, changes, history) => {
   if (!Number.isInteger(body.expectedVersion) || body.expectedVersion < 0) fail(400, 'expectedVersion is required');
   if (body.expectedVersion !== request.__v) fail(409, 'Request changed. Refresh before acting again.');
+  let before = request;
+  const auditTrail = history.map(step => {
+    const after = { ...before, ...changes, approvalStatus: step.status };
+    const action = step.status === 'DRAFT' ? 'BUDGET_MODIFIED' : step.status === 'SUBMITTED' ? 'BUDGET_SUBMITTED'
+      : step.status === 'REJECTED' ? 'BUDGET_REJECTED' : 'BUDGET_APPROVED';
+    const record = audit.event(action, step.actor ? { _id: step.actor, role: step.role } : null, before, after, request._id, step.at);
+    before = after;
+    return record;
+  });
   const changed = await Budget.findOneAndUpdate(
     { _id: request._id, __v: request.__v, approvalStatus: request.approvalStatus },
-    { $set: changes, $push: { history: { $each: history } }, $inc: { __v: 1 } },
+    { $set: changes, $push: { history: { $each: history }, auditTrail: { $each: auditTrail } }, $inc: { __v: 1 } },
     { new: true, runValidators: true }
   ).lean();
   if (!changed) fail(409, 'Request changed. Refresh before acting again.');
@@ -91,12 +101,15 @@ exports.create = async (body, principal) => {
   const previous = await existing();
   if (previous) return { request: previous, created: false };
   try {
+    const requestId = new mongoose.Types.ObjectId();
     const request = await Budget.create({
+      _id: requestId,
       ...values,
       ...lookup,
       requestFingerprint: fingerprint,
       approvalStatus: 'DRAFT',
       history: [entry('DRAFT', principal)],
+      auditTrail: [audit.event('BUDGET_CREATED', principal, null, { ...values, approvalStatus: 'DRAFT' }, requestId)],
     });
     return { request: request.toObject(), created: true };
   } catch (error) {

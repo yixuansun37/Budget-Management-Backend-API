@@ -89,6 +89,7 @@ function Navbar({ mode, setMode }) {
     { to: '/budgets', label: 'Budgets', icon: <AttachMoneyIcon /> },
     { to: '/expenses', label: 'Expenses', icon: <ReceiptLongIcon /> },
     { to: '/budget-requests', label: 'Approvals', icon: <AttachMoneyIcon /> },
+    { to: '/audit-history', label: 'Audit History', icon: <ReceiptLongIcon /> },
     { to: '/profile', label: 'Profile', icon: <AccountCircleIcon /> },
     { to: '/users', label: 'Users', icon: <GroupIcon /> },
   ];

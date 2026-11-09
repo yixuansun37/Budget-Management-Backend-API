@@ -1,3 +1,17 @@
+# Budget Management — Portfolio V2
+
+The primary application is Node.js/Express + React, extended with Budget vs. Actual
+Analysis, multi-level approvals/RBAC, and persistent Audit Trail.
+
+Read the **[portfolio README](../README.md)** for the architecture, independently
+developed V2 features, setup, APIs, tests, verification evidence, attribution,
+and known security limitations. Based on the original project by
+[Son Nguyen / hoangsonww](https://github.com/hoangsonww/Budget-Management-Backend-API),
+with the [MIT license](../LICENSE) preserved.
+
+<details>
+<summary>Earlier documentation (includes inherited claims; not deployment verification)</summary>
+
 # **Budget Management API** 💰
 
 ## V2: Multi-level approvals and RBAC
@@ -1444,3 +1458,6 @@ Created with ❤️ by [Son Nguyen](https://sonnguyenhoang.com) in 2024. All rig
 ---
 
 [⬆️ Back to Top](#budget-management-api---a-comprehensive-microservices-based-api-for-managing-budgets-expenses-users-and-more-)
+
+
+</details>
